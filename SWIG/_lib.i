@@ -8,6 +8,7 @@
 #include <openssl/rsa.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 #include <ceval.h>
 
 /* Blob interface. Deprecated. */
@@ -176,13 +177,9 @@ int ssl_verify_callback(int ok, X509_STORE_CTX *ctx) {
         _x509_store_ctx_swigptr = SWIG_NewPointerObj((void *)ctx, SWIGTYPE_p_X509_STORE_CTX, 0);
         _x509_store_ctx_obj = Py_BuildValue("(Oi)", _x509_store_ctx_swigptr, 0);
 
-#if PY_MAJOR_VERSION >= 3
-        _x509_store_ctx_inst = PyType_GenericNew(_klass, _x509_store_ctx_obj, NULL);
-#else
-        _x509_store_ctx_inst = PyInstance_New(_klass, _x509_store_ctx_obj, NULL);
-#endif // PY_MAJOR_VERSION >= 3
+	_x509_store_ctx_inst = PyObject_CallObject(_klass, _x509_store_ctx_obj);
 
-        argv = Py_BuildValue("(iO)", ok, _x509_store_ctx_inst);
+	argv = Py_BuildValue("(iO)", ok, _x509_store_ctx_inst);
     } else {
         if (PyErr_Warn(PyExc_DeprecationWarning, "Old style callback, use cb_func(ok, store) instead")) {
             warning_raised_exception = 1;
@@ -212,7 +209,12 @@ int ssl_verify_callback(int ok, X509_STORE_CTX *ctx) {
          */
         cret = 0;
     } else {
+#if PY_MAJOR_VERSION >= 3
+        /* FIXME This is possibly problematic if ret > MAXINT */
+        cret = (int)PyLong_AsLong(ret);
+#else
         cret = (int)PyInt_AsLong(ret);
+#endif // PY_MAJOR_VERSION >= 3
     }
     Py_XDECREF(ret);
     Py_XDECREF(argv);
@@ -228,6 +230,48 @@ int ssl_verify_callback(int ok, X509_STORE_CTX *ctx) {
 
     PyGILState_Release(gilstate);
 
+    return cret;
+}
+
+int x509_store_verify_callback(int ok, X509_STORE_CTX *ctx) {
+    PyGILState_STATE gilstate;
+    PyObject *argv, *ret;
+    PyObject *_x509_store_ctx_swigptr=0, *_x509_store_ctx_obj=0, *_x509_store_ctx_inst=0, *_klass=0;
+    int cret;
+    PyObject *self = NULL; /* bug in SWIG_NewPointerObj as of 3.0.5 */
+
+
+    gilstate = PyGILState_Ensure();
+
+    /* Below, handle only what is called 'new style callback' in ssl_verify_callback().
+       TODO: does 'old style callback' exist any more? */
+    PyObject *x509mod = PyDict_GetItemString(PyImport_GetModuleDict(), "M2Crypto.X509");
+    _klass = PyObject_GetAttrString(x509mod, "X509_Store_Context");
+    _x509_store_ctx_swigptr = SWIG_NewPointerObj((void *)ctx, SWIGTYPE_p_X509_STORE_CTX, 0);
+    _x509_store_ctx_obj = Py_BuildValue("(Oi)", _x509_store_ctx_swigptr, 0);
+
+    _x509_store_ctx_inst = PyObject_CallObject(_klass, _x509_store_ctx_obj);
+
+    argv = Py_BuildValue("(iO)", ok, _x509_store_ctx_inst);
+
+    ret = PyEval_CallObject(x509_store_verify_cb_func, argv);
+    if (!ret) {
+        /* Got an exception in PyEval_CallObject(), let's fail verification
+         * to be safe.
+         */
+        cret = 0;
+    } else {
+        cret = (int)PyInt_AsLong(ret);
+    }
+
+    Py_XDECREF(ret);
+    Py_XDECREF(argv);
+    Py_XDECREF(_x509_store_ctx_inst);
+    Py_XDECREF(_x509_store_ctx_obj);
+    Py_XDECREF(_x509_store_ctx_swigptr);
+    Py_XDECREF(_klass);
+
+    PyGILState_Release(gilstate);
     return cret;
 }
 
@@ -601,7 +645,11 @@ http://stackoverflow.com/questions/8195383/pyfile-type-replaced-by
 }
 
 %typemap(out) int {
+#if PY_MAJOR_VERSION >= 3
+    $result=PyLong_FromLong($1);
+#else
     $result=PyInt_FromLong($1);
+#endif // PY_MAJOR_VERSION >= 3
     if (PyErr_Occurred()) SWIG_fail;
 }
 

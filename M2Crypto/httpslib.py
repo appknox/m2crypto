@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import warnings
+
 """M2Crypto support for Python's httplib.
 
 Copyright (c) 1999-2004 Ng Pheng Siong. All rights reserved."""
@@ -7,13 +9,13 @@ Copyright (c) 1999-2004 Ng Pheng Siong. All rights reserved."""
 import base64
 import socket
 
-from M2Crypto import SSL, util
+from M2Crypto import SSL, six, util
 from M2Crypto.six.moves.urllib_parse import urlsplit, urlunsplit
 from M2Crypto.six.moves.http_client import *  # noqa
 # This is not imported with just '*'
 from M2Crypto.six.moves.http_client import HTTPS_PORT
 if util.py27plus:
-    from typing import Any, Callable, Optional  # noqa
+    from typing import Any, AnyStr, Callable, Dict, List, Optional  # noqa
 
 
 class HTTPSConnection(HTTPConnection):
@@ -25,7 +27,7 @@ class HTTPSConnection(HTTPConnection):
     default_port = HTTPS_PORT
 
     def __init__(self, host, port=None, strict=None, **ssl):
-        # type: (str, Optional[int], Optional[bool], **dict) -> None
+        # type: (str, Optional[int], Optional[bool], **Dict[Any, Any]) -> None
         """
         Represents one transaction with an HTTP server over the SSL
         connection.
@@ -50,7 +52,7 @@ class HTTPSConnection(HTTPConnection):
             self.ssl_ctx = ssl['ssl_context']
             assert isinstance(self.ssl_ctx, SSL.Context), self.ssl_ctx
         except KeyError:
-            self.ssl_ctx = SSL.Context('sslv23')
+            self.ssl_ctx = SSL.Context()
         HTTPConnection.__init__(self, host, port, strict)
 
     def connect(self):
@@ -129,7 +131,7 @@ class ProxyHTTPSConnection(HTTPSConnection):
 
     def __init__(self, host, port=None, strict=None, username=None,
                  password=None, **ssl):
-        # type: (str, Optional[int], Optional[bool], Optional[str], Optional[str], **dict) -> None
+        # type: (str, Optional[int], Optional[bool], Optional[AnyStr], Optional[AnyStr], **Dict[Any, Any]) -> None
         """
         Create the ProxyHTTPSConnection object.
 
@@ -139,7 +141,13 @@ class ProxyHTTPSConnection(HTTPSConnection):
                        raised if the status line can't be parsed as
                        a valid HTTP/1.0 or 1.1 status line.
         @param username: username on the proxy server, when required
+                         Username can be ``str``, but preferred type
+                         is ``bytes``. M2Crypto does some conversion to
+                         ``bytes`` when necessary, but it's better when
+                         the user of the library does it on its own.
         @param password: password on the proxy server, when required
+                         The same as with ``username``, ``str`` is accepted,
+                         but ``bytes`` are preferred.
         @param ssl: dict with all remaining named real parameters of the
                     function. Specifically, ``ssl_context`` is expected
                     to be included with SSL.Context; if it is not
@@ -147,13 +155,15 @@ class ProxyHTTPSConnection(HTTPSConnection):
         """
         HTTPSConnection.__init__(self, host, port, strict, **ssl)
 
-        self._username = username
-        self._password = password
+        self._username = username.encode('utf8') \
+            if isinstance(username, six.string_types) else username
+        self._password = password.encode('utf8') \
+            if isinstance(password, six.string_types) else password
         self._proxy_auth = None  # type: str
         self._proxy_UA = None  # type: str
 
     def putrequest(self, method, url, skip_host=0, skip_accept_encoding=0):
-        # type: (AnyStr, AnyStr, Optional[int], Optional[int]) -> None
+        # type: (AnyStr, AnyStr, int, int) -> None
         """
         putrequest is called before connect, so can interpret url and get
         real host/port to be used to make CONNECT request to proxy
@@ -169,7 +179,8 @@ class ProxyHTTPSConnection(HTTPSConnection):
             host_port = netloc
 
         try:
-            host, port = host_port.split(':')
+            host, port_s = host_port.split(':')
+            port = int(port_s)
         except ValueError:
             host = host_port
             # try to get port from proto
@@ -178,8 +189,8 @@ class ProxyHTTPSConnection(HTTPSConnection):
             except KeyError:
                 raise ValueError("unknown protocol for: %s" % url)
 
-        self._real_host = host
-        self._real_port = int(port)
+        self._real_host = host  # type: str
+        self._real_port = port  # type: int
         rest = urlunsplit((None, None, path, query, fragment))
         HTTPSConnection.putrequest(self, method, rest, skip_host,
                                    skip_accept_encoding)
@@ -195,7 +206,7 @@ class ProxyHTTPSConnection(HTTPSConnection):
             HTTPSConnection.putheader(self, header, value)
 
     def endheaders(self, *args, **kwargs):
-        # type: (*Any, **Any) -> None
+        # type: (*List[Any], **Dict[Any, Any]) -> None
         # We've recieved all of hte headers. Use the supplied username
         # and password for authorization, possibly overriding the authstring
         # supplied in the headers.
@@ -222,7 +233,7 @@ class ProxyHTTPSConnection(HTTPSConnection):
         self._start_ssl()
 
     def _get_connect_msg(self):
-        # type: () -> str
+        # type: () -> bytes
         """ Return an HTTP CONNECT request to send to the proxy. """
         msg = "CONNECT %s:%d HTTP/1.1\r\n" % (self._real_host, self._real_port)
         msg = msg + "Host: %s:%d\r\n" % (self._real_host, self._real_port)
@@ -231,7 +242,7 @@ class ProxyHTTPSConnection(HTTPSConnection):
         if self._proxy_auth:
             msg = msg + "%s: %s\r\n" % (self._AUTH_HEADER, self._proxy_auth)
         msg = msg + "\r\n"
-        return msg
+        return util.py3bytes(msg)
 
     def _start_ssl(self):
         # type: () -> None
@@ -242,11 +253,13 @@ class ProxyHTTPSConnection(HTTPSConnection):
         self.sock.connect_ssl()
 
     def _encode_auth(self):
-        # type: () -> Optional[str]
+        # type: () -> Optional[bytes]
         """ Encode the username and password for use in the auth header. """
         if not (self._username and self._password):
             return None
         # Authenticated proxy
         userpass = "%s:%s" % (self._username, self._password)
-        enc_userpass = base64.encodestring(userpass).replace("\n", "")
-        return "Basic %s" % enc_userpass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            enc_userpass = base64.encodestring(userpass).replace("\n", "")
+        return util.py3bytes("Basic %s" % enc_userpass)

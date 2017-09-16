@@ -65,7 +65,7 @@ class BIO(object):
                 buf += data
             return buf
         elif size == 0:
-            return ''
+            return b''
         elif size < 0:
             raise ValueError('read count is negative')
         else:
@@ -213,39 +213,49 @@ class MemoryBuffer(BIO):
 
 class File(BIO):
 
-    """
-    Object interface to BIO_s_fp.
+    """Object interface to BIO_s_fp.
 
-    This class interfaces Python to OpenSSL functions that expect BIO *. For
-    general file manipulation in Python, use Python's builtin file object.
+    This class interfaces Python to OpenSSL functions that expect ``BIO *``.
     """
 
-    def __init__(self, pyfile, close_pyfile=1):
-        # type: (io.BinaryIO, int) -> None
-        BIO.__init__(self, _pyfree=1)
-        self.pyfile = pyfile
-        self.close_pyfile = close_pyfile
-        self.bio = m2.bio_new_fd(pyfile.fileno(), m2.bio_noclose)
+    def __init__(self, pyfile, mode='rb'):
+        # type: (AnyStr, AnyStr) -> None
+        super(File, self).__init__(self,)
+        if isinstance(pyfile, six.string_types):
+            self.fname = pyfile
+            self.bio = m2.bio_new_file(self.fname, mode)
+            self.pyfile = None
+        else:
+            # This is for downward compatibility, but I don't think, that it is
+            # good practice to have two handles for the same file. Whats about
+            # concurrent write access? Last write, last wins? Especially since Py3
+            # has its own buffer management. See:
+            #
+            #  https://docs.python.org/3.3/c-api/file.html
+            #
+            pyfile.flush()
+            self.fname = pyfile.name
+            self.bio = m2.bio_new_fd(pyfile.fileno(), m2.bio_noclose)
+        self.closed = False
 
     def close(self):
         # type: () -> None
-        self.closed = 1
-        if self.close_pyfile:
-            self.pyfile.close()
+        # Original version: what's wrong with it?
+        # self.closed = 1
+        # if self.close_pyfile:
+        #     self.pyfile.close()
+        log.info('closing %s file', self.fname)
+        m2.bio_free(self.bio)
+        self.closed  = True
 
-    def reset(self):
-        # type: () -> int
-        """
-        Sets the bio to its initial state
-        @return: 0 for success, and -1 for failure
-        """
-        return super(File, self).reset()
+    def __del__(self):
+        if not self.closed:
+            m2.bio_free(self.bio)
 
 
 def openfile(filename, mode='rb'):
     # type: (AnyStr, AnyStr) -> File
-    return File(open(filename, mode))
-
+    return File(filename, mode)
 
 class IOBuffer(BIO):
 

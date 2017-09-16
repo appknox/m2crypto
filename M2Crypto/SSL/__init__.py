@@ -7,10 +7,12 @@ Copyright (c) 1999-2004 Ng Pheng Siong. All rights reserved."""
 import socket
 
 # M2Crypto
-from .. import __m2crypto as m2
+from M2Crypto import m2
+
 
 class SSLError(Exception):
     pass
+
 
 class SSLTimeoutError(SSLError, socket.timeout):
     pass

@@ -9,7 +9,7 @@ from M2Crypto.SSL import cb  # noqa
 from M2Crypto.SSL.Session import Session  # noqa
 from weakref import WeakValueDictionary
 if util.py27plus:
-    from typing import Any, Callable, Optional, Union  # noqa
+    from typing import Any, AnyStr, Callable, Optional, Union  # noqa
 
 __all__ = ['ctxmap', 'Context', 'map']
 
@@ -51,21 +51,24 @@ class Context:
 
     m2_ssl_ctx_free = m2.ssl_ctx_free
 
-    def __init__(self, protocol='sslv23', weak_crypto=None,
+    def __init__(self, protocol='tls', weak_crypto=None,
                  post_connection_check=None):
         # type: (str, Optional[int], Optional[Callable]) -> None
         proto = getattr(m2, protocol + '_method', None)
         if proto is None:
-            raise ValueError("no such protocol '%s'" % protocol)
+            # default is 'sslv23' for older versions of OpenSSL
+            if protocol == 'tls':
+                proto = getattr(m2, 'sslv23_method')
+            else:
+                raise ValueError("no such protocol '%s'" % protocol)
         self.ctx = m2.ssl_ctx_new(proto())
         self.allow_unknown_ca = 0  # type: Union[int, bool]
         self.post_connection_check = post_connection_check
         ctxmap()[int(self.ctx)] = self
         m2.ssl_ctx_set_cache_size(self.ctx, 128)
-        if weak_crypto is None:
-            if protocol == 'sslv23':
-                self.set_options(m2.SSL_OP_ALL | m2.SSL_OP_NO_SSLv2)
-            self.set_cipher_list('ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH')
+        if weak_crypto is None and protocol in ('sslv23', 'tls'):
+            self.set_options(m2.SSL_OP_ALL | m2.SSL_OP_NO_SSLv2 |
+                             m2.SSL_OP_NO_SSLv3)
 
     def __del__(self):
         # type: () -> None
@@ -78,7 +81,7 @@ class Context:
 
     def load_cert(self, certfile, keyfile=None,
                   callback=util.passphrase_callback):
-        # type: (AnyStr, AnyStr, Callable) -> None
+        # type: (AnyStr, Optional[AnyStr], Callable) -> None
         """Load certificate and private key into the context.
 
         @param certfile: File that contains the PEM-encoded certificate.
@@ -99,7 +102,7 @@ class Context:
 
     def load_cert_chain(self, certchainfile, keyfile=None,
                         callback=util.passphrase_callback):
-        # type: (AnyStr, AnyStr, Callable) -> None
+        # type: (AnyStr, Optional[AnyStr], Callable) -> None
         """Load certificate chain and private key into the context.
 
         @param certchainfile: File object containing the PEM-encoded
@@ -177,6 +180,28 @@ class Context:
         if not ret:
             raise Err.SSLError(Err.get_error_code(), '')
 
+    def set_default_verify_paths(self):
+        # type: () -> int
+        """
+        Specifies that the default locations from which CA certs are
+        loaded should be used.
+
+        There is one default directory and one default file. The default
+        CA certificates directory is called "certs" in the default
+        OpenSSL directory. Alternatively the SSL_CERT_DIR environment
+        variable can be defined to override this location. The default
+        CA certificates file is called "cert.pem" in the default OpenSSL
+        directory. Alternatively the SSL_CERT_FILE environment variable
+        can be defined to override this location.
+
+        @return 0 if the operation failed. A missing default location is
+                  still treated as a success. No error code is set.
+                1 The operation succeeded.
+        """
+        ret = m2.ssl_ctx_set_default_verify_paths(self.ctx)
+        if not ret:
+            raise ValueError('Cannot use default SSL certificate store!')
+
     def set_allow_unknown_ca(self, ok):
         # type: (Union[int, bool]) -> None
         """Set the context to accept/reject a peer certificate if the
@@ -236,7 +261,7 @@ class Context:
         return m2.ssl_ctx_set_tmp_dh(self.ctx, dhp)
 
     def set_tmp_dh_callback(self, callback=None):
-        # type: (Callable) -> None
+        # type: (Optional[Callable]) -> None
         """Sets the callback function for SSL.Context.
 
         @param callback: Callable to be used when a DH parameters are required.
@@ -256,7 +281,7 @@ class Context:
             raise TypeError("Expected an instance of RSA.RSA, got %s." % rsa)
 
     def set_tmp_rsa_callback(self, callback=None):
-        # type: (Callable) -> None
+        # type: (Optional[Callable]) -> None
         """Sets the callback function to be used when
         a temporary/ephemeral RSA key is required.
         """

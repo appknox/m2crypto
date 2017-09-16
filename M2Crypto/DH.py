@@ -42,7 +42,7 @@ class DH:
         return m2.dh_size(self.dh)
 
     def __getattr__(self, name):
-        # type: (AnyStr) -> bytes
+        # type: (str) -> bytes
         if name in ('p', 'g', 'pub', 'priv'):
             method = getattr(m2, 'dh_get_%s' % (name,))
             assert m2.dh_type_check(self.dh), "'dh' type error"
@@ -51,7 +51,7 @@ class DH:
             raise AttributeError
 
     def __setattr__(self, name, value):
-        # type: (AnyStr, bytes) -> bytes
+        # type: (str, bytes) -> bytes
         if name in ('p', 'g'):
             raise DHError('set (p, g) via set_params()')
         elif name in ('pub', 'priv'):

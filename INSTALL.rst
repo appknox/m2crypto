@@ -10,9 +10,21 @@ The following software packages are pre-requisites:
 
 -  Python 2.6 or newer
 -  OpenSSL 1.0.1e or newer
--  SWIG 1.3.40 or newer
 -  Python 2.6 platforms require the Python package unittest2 to be
    installed
+
+For further development you need (aside from the normal development
+environment, C compiler, header files for OpenSSL, etc.) also:
+
+-  SWIG 2.0.4 or newer
+
+Debian
+~~~~~~
+
+For Py2 & Py3 support install::
+
+    sudo apt-get install build-essential python3-dev python-dev libssl-dev swig
+
 
 Installing on Unix-like systems, including Cygwin
 -------------------------------------------------
@@ -129,7 +141,7 @@ him a working copy of M2Crypto on his system::
     $ brew install openssl && brew install swig
     $ brew --prefix openssl
     /usr/local/opt/openssl
-    $ LDFLAGS="-L$(brew --prefix openssl)/lib" 
+    $ LDFLAGS="-L$(brew --prefix openssl)/lib" \
     CFLAGS="-I$(brew --prefix openssl)/include" \
     SWIG_FEATURES="-I$(brew --prefix openssl)/include" \
     pip install m2crypto

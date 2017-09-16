@@ -8,6 +8,7 @@ Copyright (c) 2004-2007 Open Source Applications Foundation
 Author: Heikki Toivonen
 """
 
+import codecs
 import hashlib
 import io
 import logging
@@ -74,7 +75,7 @@ class EVPTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             EVP.MessageDigest('sha513')
         md = EVP.MessageDigest('sha1')
-        self.assertEqual(md.update('Hello'), 1)
+        self.assertEqual(md.update(b'Hello'), 1)
         self.assertEqual(util.octx_to_num(md.final()),
                          1415821221623963719413415453263690387336440359920)
 
@@ -85,7 +86,7 @@ class EVPTestCase(unittest.TestCase):
         # now run the same test again, relying on EVP.MessageDigest() to call
         # get_digestbyname() under the hood
         md = EVP.MessageDigest('sha1')
-        self.assertEqual(md.update('Hello'), 1)
+        self.assertEqual(md.update(b'Hello'), 1)
         self.assertEqual(util.octx_to_num(md.final()),
                          1415821221623963719413415453263690387336440359920)
 
@@ -270,6 +271,34 @@ class EVPTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             util.pkcs7_pad('Hello', 256)
 
+    def test_pkey_verify_crash(self):
+        SIGN_PRIVATE = EVP.load_key('tests/rsa.priv.pem')
+        SIGN_PUBLIC = RSA.load_pub_key('tests/rsa.pub.pem')
+
+        def sign(data):
+            SIGN_PRIVATE.sign_init()
+            SIGN_PRIVATE.sign_update(data)
+            signed_data = SIGN_PRIVATE.sign_final()
+            return codecs.encode(signed_data, 'base64')
+
+        def verify(response):
+            signature = codecs.decode(response['sign'], 'base64')
+            data = response['data']
+            verify_evp = EVP.PKey()
+            # capture parameter on the following line is required by
+            # the documentation
+            verify_evp.assign_rsa(SIGN_PUBLIC, capture=False)
+            verify_evp.verify_init()
+            verify_evp.verify_update(data)
+            # m2.verify_final(self.ctx, sign, self.pkey)
+            fin_res = verify_evp.verify_final(signature)
+            return fin_res == 1
+
+        data = b"test message"
+        signature = sign(data)
+        res = {"data": data, "sign": signature}
+        self.assertTrue(verify(res))  # works fine
+        self.assertTrue(verify(res))  # segmentation fault in *verify_final*
 
 class CipherTestCase(unittest.TestCase):
     def cipher_filter(self, cipher, inf, outf):

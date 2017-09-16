@@ -29,23 +29,23 @@ def peek_error_code():
 
 
 def get_error_lib(err):
-    # type: (int) -> bytes
-    return m2.err_lib_error_string(err)
+    # type: (int) -> str
+    return util.py3str(m2.err_lib_error_string(err))
 
 
 def get_error_func(err):
-    # type: (int) -> bytes
-    return m2.err_func_error_string(err)
+    # type: (int) -> str
+    return util.py3str(m2.err_func_error_string(err))
 
 
 def get_error_reason(err):
-    # type: (int) -> bytes
-    return m2.err_reason_error_string(err)
+    # type: (int) -> str
+    return util.py3str(m2.err_reason_error_string(err))
 
 
 def get_x509_verify_error(err):
-    # type: (int) -> bytes
-    return m2.x509_get_verify_error(err)
+    # type: (int) -> str
+    return util.py3str(m2.x509_get_verify_error(err))
 
 
 class SSLError(Exception):
@@ -56,13 +56,12 @@ class SSLError(Exception):
 
     def __str__(self):
         # type: () -> str
-        if (isinstance(self.client_addr, six.text_type)):
-            s = self.client_addr.encode('utf8')
+        if not isinstance(self.client_addr, six.text_type):
+            s = self.client_addr.decode('utf8')
         else:
             s = self.client_addr
-        return "%s: %s: %s" % \
-            (m2.err_func_error_string(self.err), s,
-             m2.err_reason_error_string(self.err))
+        return "%s: %s: %s" % (get_error_func(self.err), s,
+                               get_error_reason(self.err))
 
 
 class M2CryptoError(Exception):

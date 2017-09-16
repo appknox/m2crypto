@@ -31,8 +31,8 @@ class Cipher:
         return m2.ssl_cipher_get_version(self.cipher)
 
     def name(self):
-        # type: () -> bytes
-        return m2.ssl_cipher_get_name(self.cipher)
+        # type: () -> str
+        return util.py3str(m2.ssl_cipher_get_name(self.cipher))
 
 
 class Cipher_Stack:  # noqa

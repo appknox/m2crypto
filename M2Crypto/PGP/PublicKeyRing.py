@@ -9,7 +9,7 @@ from M2Crypto.PGP.PublicKey import *  # noqa
 from M2Crypto.PGP.constants import *  # noqa
 from M2Crypto.PGP.packet import *  # noqa
 if util.py27plus:
-    from typing import Tuple  # noqa
+    from typing import Any, AnyStr, List, Tuple  # noqa
 
 
 class PublicKeyRing:
@@ -22,37 +22,37 @@ class PublicKeyRing:
             DeprecationWarning)
 
         self._keyring = keyring
-        self._userid = {}
-        self._keyid = {}
-        self._spurious = []
-        self._pubkey = []
+        self._userid = {}  # type: dict
+        self._keyid = {}  # type: dict
+        self._spurious = []  # type: list
+        self._pubkey = []  # type: list
 
     def load(self):
         # type: () -> None
         curr_pub = None
         curr_index = -1
 
-        ps = packet.packet_stream(self._keyring)
+        ps = PacketStream(self._keyring)
         while 1:
             pkt = ps.read()
 
             if pkt is None:
                 break
 
-            elif isinstance(pkt, packet.public_key_packet):
+            elif isinstance(pkt, PublicKeyPacket):
                 curr_index = curr_index + 1
-                curr_pub = PublicKey.PublicKey(pkt)
+                curr_pub = PublicKey(pkt)
                 self._pubkey.append(curr_pub)
                 # self._keyid[curr_pub.keyid()] = (curr_pub, curr_index)
 
-            elif isinstance(pkt, packet.userid_packet):
+            elif isinstance(pkt, UserIDPacket):
                 if curr_pub is None:
                     self._spurious.append(pkt)
                 else:
                     curr_pub.add_userid(pkt)
                     self._userid[pkt.userid()] = (curr_pub, curr_index)
 
-            elif isinstance(pkt, packet.signature_packet):
+            elif isinstance(pkt, SignaturePacket):
                 if curr_pub is None:
                     self._spurious.append(pkt)
                 else:
@@ -68,7 +68,7 @@ class PublicKeyRing:
         return self._userid[id][0]
 
     def __setitem__(self, *args):
-        # type: (*list) -> None
+        # type: (*List[Any]) -> None
         raise NotImplementedError
 
     def __delitem__(self, id):
@@ -80,7 +80,7 @@ class PublicKeyRing:
         del self._keyid[idx]
 
     def spurious(self):
-        # type: () -> Tuple[packet.signature_packet]
+        # type: () -> Tuple[SignaturePacket]
         return tuple(self._spurious)
 
     def save(self, keyring):
@@ -91,7 +91,8 @@ class PublicKeyRing:
 
 
 def load_pubring(filename='pubring.pgp'):
-    # type: (str) -> PublicKeyRing
-    pkr = PublicKeyRing(open(filename, 'rb'))
-    pkr.load()
-    return pkr
+    # type: (AnyStr) -> PublicKeyRing
+    with open(filename, 'rb') as pkr_f:
+        pkr = PublicKeyRing(pkr_f)
+        pkr.load()
+        return pkr

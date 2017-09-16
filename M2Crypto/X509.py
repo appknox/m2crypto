@@ -30,8 +30,13 @@ m2.x509_init(X509Error)
 V_OK = m2.X509_V_OK  # type: int
 
 
+def x509_store_default_cb(ok, ctx):
+    # type: (int, X509_Store_Context) -> int
+    return ok
+
+
 def new_extension(name, value, critical=0, _pyfree=1):
-    # type: (AnyStr, bytes, int, int) -> X509_Extension
+    # type: (str, bytes, int, int) -> X509_Extension
     """
     Create new X509_Extension instance.
     """
@@ -231,13 +236,12 @@ class X509_Name_Entry:  # noqa
     def set_data(self, data, type=ASN1.MBSTRING_ASC):
         # type: (bytes, int) -> int
         """
-            Sets the field name to asn1obj
+        Sets the field name to asn1obj
 
-            @param data: data in a binary form to be set
-            @return: 0 on failure, 1 on success
+        @param data: data in a binary form to be set
+        @return: 0 on failure, 1 on success
         """
-        return m2.x509_name_entry_set_data(self.x509_name_entry,
-                                           type, util.py3bytes(data))
+        return m2.x509_name_entry_set_data(self.x509_name_entry, type, data)
 
     def get_object(self):
         # type: () -> ASN1.ASN1_Object
@@ -308,14 +312,11 @@ class X509_Name:  # noqa
         return m2.x509_name_oneline(self.x509_name)
 
     def __getattr__(self, attr):
-        # type: (AnyStr) -> str
-        attr = util.py3str(attr)
-
+        # type: (str) -> str
         if attr in self.nid:
             assert m2.x509_name_type_check(self.x509_name), \
                 "'x509_name' type error"
-            return util.py3str(m2.x509_name_by_nid(self.x509_name,
-                               self.nid[attr]))
+            return util.py3str(m2.x509_name_by_nid(self.x509_name, self.nid[attr]))
 
         if attr in self.__dict__:
             return self.__dict__[attr]
@@ -323,7 +324,7 @@ class X509_Name:  # noqa
         raise AttributeError(self, attr)
 
     def __setattr__(self, attr, value):
-        # type: (AnyStr, AnyStr) -> int
+        # type: (str, AnyStr) -> int
         """
         @return: 1 for success of 0 if an error occurred.
         """
@@ -355,7 +356,7 @@ class X509_Name:  # noqa
         return self.x509_name
 
     def add_entry_by_txt(self, field, type, entry, len, loc, set):
-        # entry_type: (bytes, int, bytes, int, int, int) -> int
+        # entry_type: (str, int, bytes, int, int, int) -> int
         """
         Add X509_Name field whose name is identified by its name.
 
@@ -383,7 +384,8 @@ class X509_Name:  # noqa
 
         @return: 1 for success of 0 if an error occurred.
         """
-        return m2.x509_name_add_entry_by_txt(self.x509_name, field, type,
+        return m2.x509_name_add_entry_by_txt(self.x509_name,
+                                             util.py3str(field), type,
                                              entry, len, loc, set)
 
     def entry_count(self):
@@ -391,7 +393,7 @@ class X509_Name:  # noqa
         return m2.x509_name_entry_count(self.x509_name)
 
     def get_entries_by_nid(self, nid):
-        # type: (int) -> list[X509_Name_Entry]
+        # type: (int) -> List[X509_Name_Entry]
         """
         Retrieve the next index matching nid.
 
@@ -531,21 +533,21 @@ class X509:
         assert m2.x509_type_check(self.x509), "'x509' type error"
         return m2.x509_set_version(self.x509, version)
 
-    def set_not_before(self, asn1_utctime):
-        # type: (ASN1.ASN1_UTCTIME) -> int
+    def set_not_before(self, asn1_time):
+        # type: (ASN1.ASN1_TIME) -> int
         """
         @return: 1 on success, 0 on failure
         """
         assert m2.x509_type_check(self.x509), "'x509' type error"
-        return m2.x509_set_not_before(self.x509, asn1_utctime._ptr())
+        return m2.x509_set_not_before(self.x509, asn1_time._ptr())
 
-    def set_not_after(self, asn1_utctime):
-        # type: (ASN1.ASN1_UTCTIME) -> int
+    def set_not_after(self, asn1_time):
+        # type: (ASN1.ASN1_TIME) -> int
         """
         @return: 1 on success, 0 on failure
         """
         assert m2.x509_type_check(self.x509), "'x509' type error"
-        return m2.x509_set_not_after(self.x509, asn1_utctime._ptr())
+        return m2.x509_set_not_after(self.x509, asn1_time._ptr())
 
     def set_subject_name(self, name):
         # type: (X509_Name) -> int
@@ -593,14 +595,14 @@ class X509:
         # return m2.x509_set_serial_number(self.x509, asn1_integer)
 
     def get_not_before(self):
-        # type: () -> ASN1.ASN1_UTCTIME
+        # type: () -> ASN1.ASN1_TIME
         assert m2.x509_type_check(self.x509), "'x509' type error"
-        return ASN1.ASN1_UTCTIME(m2.x509_get_not_before(self.x509))
+        return ASN1.ASN1_TIME(m2.x509_get_not_before(self.x509))
 
     def get_not_after(self):
-        # type: () -> ASN1.ASN1_UTCTIME
+        # type: () -> ASN1.ASN1_TIME
         assert m2.x509_type_check(self.x509), "'x509' type error"
-        out = ASN1.ASN1_UTCTIME(m2.x509_get_not_after(self.x509))
+        out = ASN1.ASN1_TIME(m2.x509_get_not_after(self.x509))
         if 'Bad time value' in str(out):
             raise X509Error(
                 '''M2Crypto cannot handle dates after year 2050.
@@ -668,7 +670,7 @@ class X509:
         return m2.x509_add_ext(self.x509, ext.x509_ext, -1)
 
     def get_ext(self, name):
-        # type: (AnyStr) -> X509_Extension
+        # type: (str) -> X509_Extension
         """
         Get X509 extension by name.
 
@@ -710,7 +712,7 @@ class X509:
         return m2.x509_get_ext_count(self.x509)
 
     def sign(self, pkey, md):
-        # type: (EVP.PKey, AnyStr) -> int
+        # type: (EVP.PKey, str) -> int
         """
         Sign the certificate.
 
@@ -757,7 +759,7 @@ class X509:
         return m2.x509_check_purpose(self.x509, id, ca)
 
     def get_fingerprint(self, md='md5'):
-        # type: (int) -> str
+        # type: (str) -> str
         """
         Get the fingerprint of the certificate.
 
@@ -831,8 +833,7 @@ def load_cert_string(string, format=FORMAT_PEM):
                    and FORMAT_FORMAT_DER)
     @return: M2Crypto.X509.X509 object.
     """
-    string = util.py3bytes(string)
-    bio = BIO.MemoryBuffer(string)
+    bio = BIO.MemoryBuffer(util.py3bytes(string))
     return load_cert_bio(bio, format)
 
 
@@ -844,8 +845,7 @@ def load_cert_der_string(string):
     @param string: String containing a certificate in DER format.
     @return: M2Crypto.X509.X509 object.
     """
-    string = util.py3bytes(string)
-    bio = BIO.MemoryBuffer(string)
+    bio = BIO.MemoryBuffer(util.py3bytes(string))
     cptr = m2.d2i_x509(bio._ptr())
     if cptr is None:
         raise X509Error(Err.get_error())
@@ -960,6 +960,31 @@ class X509_Store:  # noqa
         assert isinstance(x509, X509)
         return m2.x509_store_add_cert(self.store, x509._ptr())
 
+
+    def set_verify_cb(self, callback=None):
+        # type: (Optional[callable]) -> None
+        """
+        Set callback which will be called when the store is verified.
+        Wrapper over OpenSSL X509_STORE_set_verify_cb().
+
+        @param callback:    Callable to specify verification options.
+                            Type of the callable must be:
+                            (int, X509_Store_Context) -> int.
+                            If None: set the standard options.
+        @note compile-time or run-time errors in the callback would result
+               in mysterious errors during verification, which could be hard
+               to trace.
+        @note  Python exceptions raised in callbacks do not propagate to
+               verify() call.
+        @return: None
+        """
+        if callback is None:
+            return self.set_verify_cb(x509_store_default_cb)
+
+        if not callable(callback):
+            raise X509Error("set_verify(): callback is not callable")
+        return m2.x509_store_set_verify_cb(self.store, callback)
+
     add_cert = add_x509
 
 
@@ -1054,8 +1079,7 @@ def new_stack_from_der(der_string):
 
     @return: X509_Stack
     """
-    der_string = util.py3bytes(der_string)
-    stack_ptr = m2.make_stack_from_der_sequence(der_string)
+    stack_ptr = m2.make_stack_from_der_sequence(util.py3bytes(der_string))
     if stack_ptr is None:
         raise X509Error(Err.get_error())
     return X509_Stack(stack_ptr, 1, 1)
@@ -1069,7 +1093,7 @@ class Request:
     m2_x509_req_free = m2.x509_req_free
 
     def __init__(self, req=None, _pyfree=0):
-        # type: (int, int) -> None
+        # type: (Optional[int], int) -> None
         if req is not None:
             self.req = req
             self._pyfree = _pyfree
@@ -1202,7 +1226,7 @@ class Request:
         return m2.x509_req_verify(self.req, pkey.pkey)
 
     def sign(self, pkey, md):
-        # type: (EVP.PKey, AnyStr) -> int
+        # type: (EVP.PKey, str) -> int
         """
 
         @param pkey: PKey to be signed
@@ -1278,8 +1302,7 @@ def load_request_string(string, format=FORMAT_PEM):
 
     @return: M2Crypto.X509.Request object.
     """
-    string = util.py3bytes(string)
-    bio = BIO.MemoryBuffer(string)
+    bio = BIO.MemoryBuffer(util.py3bytes(string))
     return load_request_bio(bio, format)
 
 
@@ -1291,8 +1314,7 @@ def load_request_der_string(string):
     @param string: String containing a certificate request in DER format.
     @return: M2Crypto.X509.Request object.
     """
-    string = util.py3bytes(string)
-    bio = BIO.MemoryBuffer(string)
+    bio = BIO.MemoryBuffer(util.py3bytes(string))
     return load_request_bio(bio, FORMAT_DER)
 
 

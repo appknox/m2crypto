@@ -47,7 +47,7 @@ class Connection:
         # type: (Context, socket.socket, int) -> None
         """
 
-        @param ctx: SSL.Context
+        @param ctx: Context
         @param sock: socket to be used
         @param family: socket family
         """
@@ -285,9 +285,6 @@ class Connection:
 
     def connect_ssl(self):
         # type: () -> Optional[int]
-        log.debug(
-            'self.ssl = {0}, self.timeout = {0}'.format(
-                self.ssl, self._timeout))
         return m2.ssl_connect(self.ssl, self._timeout)
 
     def connect(self, addr):
@@ -299,11 +296,9 @@ class Connection:
         """
         self.socket.connect(addr)
         self.addr = addr
-        log.debug('self.addr = {0}'.format(self.addr))
         self.setup_ssl()
         self.set_connect_state()
         ret = self.connect_ssl()
-        log.debug('ret = {0}'.format(ret))
         check = getattr(self, 'postConnectionCheck',
                         self.clientPostConnectionCheck)
         if check is not None:
@@ -436,7 +431,7 @@ class Connection:
                described in the Unix man page getsockopt(2)). The needed
                symbolic constants (SO_* etc.) are defined in the socket
                module.
-        @param buffer: If buflen is absent, an integer option is assumed
+        @param buflen: If it is absent, an integer option is assumed
                and its integer value is returned by the function. If
                buflen is present, it specifies the maximum length of the
                buffer used to receive the option in, and this buffer is
@@ -449,23 +444,23 @@ class Connection:
         return self.socket.getsockopt(level, optname, buflen)
 
     def setsockopt(self, level, optname, value=None):
-        # type: (int, int, Union[int, bytes]) -> Optional[bytes]
+        # type: (int, int, Union[int, bytes, None]) -> Optional[bytes]
         """Set the value of the given socket option.
 
         @param level: same as with getsockopt() above
         @param optname: same as with getsockopt() above
-        @param buffer: The value can be an integer or a string
-               representing a buffer. In the latter case it is up to the
-               caller to ensure that the string contains the proper bits
-               (see the optional built-in module struct for a way to
-               encode C structures as strings).
+        @param value: an integer or a string representing a buffer. In
+                      the latter case it is up to the caller to ensure
+                      that the string contains the proper bits (see the
+                      optional built-in module struct for a way to
+                      encode C structures as strings).
         @return: None for success or the error handler for failure.
         """
         return self.socket.setsockopt(level, optname, value)
 
     def get_context(self):
-        # type: () -> SSL.Context
-        """Return the SSL.Context object associated with this connection."""
+        # type: () -> Context
+        """Return the Context object associated with this connection."""
         return m2.ssl_get_ssl_ctx(self.ssl)
 
     def get_state(self):
@@ -530,7 +525,7 @@ class Connection:
         return X509.X509_Stack(c)
 
     def get_cipher(self):
-        # type: () -> Optional[SSL.Cipher]
+        # type: () -> Optional[Cipher]
         """Return an M2Crypto.SSL.Cipher object for this connection; if the
         connection has not been initialised with a cipher suite, return None.
         """
@@ -558,7 +553,7 @@ class Connection:
     def set_cipher_list(self, cipher_list):
         # type: (str) -> int
         """Set the cipher suites for this connection."""
-        return m2.ssl_set_cipher_list(self.ssl, util.py3bytes(cipher_list))
+        return m2.ssl_set_cipher_list(self.ssl, cipher_list)
 
     def makefile(self, mode='rb', bufsize=-1):
         # type: (AnyStr, int) -> socket._fileobject
@@ -598,12 +593,12 @@ class Connection:
             raise SSLError(m2.err_reason_error_string(m2.err_get_error()))
 
     def get_session(self):
-        # type: () -> SSL.Session
+        # type: () -> Session
         sess = m2.ssl_get_session(self.ssl)
         return Session(sess)
 
     def set_session(self, session):
-        # type: (SSL.Session) -> None
+        # type: (Session) -> None
         m2.ssl_set_session(self.ssl, session._ptr())
 
     def get_default_session_timeout(self):
@@ -611,25 +606,25 @@ class Connection:
         return m2.ssl_get_default_session_timeout(self.ssl)
 
     def get_socket_read_timeout(self):
-        # type: () -> SSL.timeout
+        # type: () -> timeout
         return timeout.struct_to_timeout(
             self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO,
                                    timeout.struct_size()))
 
     def get_socket_write_timeout(self):
-        # type: () -> SSL.timeout
+        # type: () -> timeout
         return timeout.struct_to_timeout(
             self.socket.getsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO,
                                    timeout.struct_size()))
 
     def set_socket_read_timeout(self, timeo):
-        # type: (SSL.timeout) -> None
+        # type: (timeout) -> None
         assert isinstance(timeo, timeout.timeout)
         self.socket.setsockopt(
             socket.SOL_SOCKET, socket.SO_RCVTIMEO, timeo.pack())
 
     def set_socket_write_timeout(self, timeo):
-        # type: (SSL.timeout) -> None
+        # type: (timeout) -> None
         assert isinstance(timeo, timeout.timeout)
         self.socket.setsockopt(
             socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeo.pack())

@@ -2,6 +2,14 @@
 /* Copyright (c) 1999 Ng Pheng Siong. All rights reserved. */
 /* $Id$ */
 
+%include <openssl/opensslconf.h>
+
+#if defined(OPENSSL_NO_RC4)
+#undef OPENSSL_NO_RC4
+%constant OPENSSL_NO_RC4 = 1;
+#else
+%constant OPENSSL_NO_RC4 = 0;
+
 %{
 #include <openssl/rc4.h>
 %}
@@ -29,8 +37,7 @@ PyObject *rc4_set_key(RC4_KEY *key, PyObject *value) {
         return NULL;
 
     RC4_set_key(key, vlen, vbuf);
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 PyObject *rc4_update(RC4_KEY *key, PyObject *in) {
@@ -62,3 +69,5 @@ int rc4_type_check(RC4_KEY *key) {
     return 1;
 }
 %}
+
+#endif

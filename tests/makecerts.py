@@ -22,9 +22,9 @@ from tests.test_ec_curves import tested_curve
 
 
 t = time.time() + time.timezone
-before = ASN1.ASN1_UTCTIME()
+before = ASN1.ASN1_TIME()
 before.set_time(t)
-after = ASN1.ASN1_UTCTIME()
+after = ASN1.ASN1_TIME()
 after.set_time(t + 60 * 60 * 24 * 365 * 10)  # 10 years
 
 serial = 1
@@ -71,12 +71,12 @@ def req(name):
 def save_text_pem_key(cert, name, with_key=True):
     with open(name + '.pem', 'wb') as f:
         for line in cert.as_text():
-            f.write(line)
-        for line in cert.as_pem():
-            f.write(line)
+            f.write(line.encode("ascii"))
+        f.write(cert.as_pem())
         if with_key:
-            for line in open(name + '_key.pem', 'rb'):
-                f.write(line)
+            with open(name + '_key.pem', 'rb') as key_f:
+                for line in key_f:
+                    f.write(line)
 
 
 def issue(request, ca, capk):

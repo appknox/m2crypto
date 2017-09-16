@@ -14,15 +14,21 @@ import glob
 import os
 import platform
 import string
+import subprocess
 import sys
 
-import setuptools
-
-from distutils.command import build
+from distutils.command import build, sdist
 from distutils.command.clean import clean
 from distutils.dir_util import mkpath
 from distutils.file_util import copy_file
+from distutils.version import StrictVersion
+
+import setuptools
+
 from setuptools.command import build_ext
+
+REQUIRED_SWIG_VERSION = '2.0.4'
+MAXIMUM_OPENSSL_VERSION = '1.0.1'
 
 
 if sys.version_info[:2] <= (2, 6):
@@ -35,6 +41,48 @@ else:
     requires_list = ['typing']
     import sysconfig
     _multiarch = sysconfig.get_config_var("MULTIARCH")
+
+
+def openssl_version(req_ver):
+    # type: (str) -> bool
+    """
+    Compare version of the installed OpenSSL with the maximum required version.
+
+    @param req_ver: required version as a str (e.g., '1.0.1')
+    @return: Boolean indicating whether the satisfying version of
+             OpenSSL has been installed.
+    """
+    ver_str = None
+
+    try:
+        pid = subprocess.Popen(['openssl', 'version', '-v'],
+                               stdout=subprocess.PIPE)
+    except OSError:
+        return False
+
+    out, _ = pid.communicate()
+    if hasattr(out, 'decode'):
+        out = out.decode('utf8')
+
+    ver_str = out.split()[1].strip(string.letters + string.punctuation +
+                                   string.whitespace)
+
+    if not ver_str:
+        raise OSError('Unknown format of openssl version -v output:\n%s' % out)
+
+    return StrictVersion(ver_str) <= StrictVersion(req_ver)
+
+
+class _M2CryptoSDist(sdist.sdist):
+    '''Specialization of build to enable swig_opts to inherit any
+    include_dirs settings made at the command line or in a setup.cfg file'''
+    def run(self):
+        if openssl_version(MAXIMUM_OPENSSL_VERSION):
+            sdist.sdist.run(self)
+        else:
+            raise OSError(
+                'We cannot use OpenSSL version more recent than %s!' %
+                MAXIMUM_OPENSSL_VERSION)
 
 
 class _M2CryptoBuild(build.build):
@@ -64,7 +112,7 @@ class _M2CryptoBuildExt(build_ext.build_ext):
         # command line option
         if os.name == 'nt':
             self.libraries = ['ssleay32', 'libeay32']
-            self.openssl = 'c:\\\openssl'
+            self.openssl = 'c:\\pkg'
         else:
             self.libraries = ['ssl', 'crypto']
             self.openssl = '/usr'
@@ -75,8 +123,11 @@ class _M2CryptoBuildExt(build_ext.build_ext):
 
         build_ext.build_ext.finalize_options(self)
 
-        if self.swig_opts is None:
-            self.swig_opts = []
+        if not self.swig_opts:
+            if sys.version_info[:1] >= (3,):
+                self.swig_opts = ['-py3']
+            else:
+                self.swig_opts = []
 
         _openssl = next((x.split('=')[1] for x in sys.argv
                          if '--openssl=' in x), None)
@@ -117,9 +168,8 @@ class _M2CryptoBuildExt(build_ext.build_ext):
         # building a single extension with a known path; a proper patch to
         # distutils would be in the run phase, when extension name and path are
         # known.
-        self.swig_opts.append('-outdir')
-        self.swig_opts.append(os.path.join(self.build_lib, 'M2Crypto'))
-
+        self.swig_opts.extend(['-outdir',
+                              os.path.join(os.getcwd(), 'M2Crypto')])
         self.include_dirs.append(os.path.join(os.getcwd(), 'SWIG'))
 
         if sys.platform == 'cygwin':
@@ -133,27 +183,54 @@ class _M2CryptoBuildExt(build_ext.build_ext):
         self.library_dirs += [os.path.join(self.openssl, openssl_library_dir)]
         mkpath(os.path.join(self.build_lib, 'M2Crypto'))
 
-    def run(self):
-        '''Overloaded build_ext implementation to allow inplace=1 to work,
-        which is needed for (python setup.py test).'''
-        # This is another workaround for http://bugs.python.org/issue2624 + the
-        # corresponding lack of support in setuptools' test command. Note that
-        # just using self.inplace in finalize_options() above does not work
-        # because swig is not rerun if the __m2crypto.so extension exists.
-        # Again, hard-coding our extension name and location.
-        build_ext.build_ext.run(self)
-        if self.inplace:
-            copy_file(os.path.join(self.build_lib, 'M2Crypto', '_m2crypto.py'),
-                      os.path.join('M2Crypto', '_m2crypto.py'),
-                      verbose=self.verbose, dry_run=self.dry_run)
+
+def swig_version(req_ver):
+    # type: (str) -> bool
+    """
+    Compare version of the swig with the required version
+
+    @param req_ver: required version as a str (e.g., '2.0.4')
+    @return: Boolean indicating whether the satisfying version of swig
+             has been installed.
+    """
+    ver_str = None
+    IND_VER_LINE = 'SWIG Version '
+
+    try:
+        pid = subprocess.Popen(['swig', '-version'], stdout=subprocess.PIPE)
+    except OSError:
+        return False
+
+    out, _ = pid.communicate()
+    if hasattr(out, 'decode'):
+        out = out.decode('utf8')
+
+    for line in out.split('\n'):
+        line = line.strip()
+        if line.startswith(IND_VER_LINE):
+            ver_str = line.strip()[len(IND_VER_LINE):]
+            break
+
+    if not ver_str:
+        raise OSError('Unknown format of swig -version output:\n%s' % out)
+
+    return StrictVersion(ver_str) >= StrictVersion(req_ver)
+
 
 if sys.platform == 'darwin':
     my_extra_compile_args = ["-Wno-deprecated-declarations"]
 else:
     my_extra_compile_args = []
 
-m2crypto = setuptools.Extension(name='M2Crypto.__m2crypto',
-                                sources=['SWIG/_m2crypto.i'],
+# Don't try to run swig on the ancient platforms
+if swig_version(REQUIRED_SWIG_VERSION):
+    lib_sources = ['SWIG/_m2crypto.i']
+else:
+    lib_sources = ['SWIG/_m2crypto_wrap.c']
+
+
+m2crypto = setuptools.Extension(name='M2Crypto._m2crypto',
+                                sources=lib_sources,
                                 extra_compile_args=['-DTHREADING'],
                                 # Uncomment to build Universal Mac binaries
                                 # extra_link_args =
@@ -175,9 +252,8 @@ class Clean(clean):
     def run(self):
         clean.run(self)
         garbage_list = [
-            "M2Crypto/__m2crypto*.so",
-            "M2Crypto/__m2crypto*.pyd",
-            "M2Crypto/_m2crypto.py",
+            "M2Crypto/*m2crypto*.so",
+            "M2Crypto/*m2crypto*.pyd"
         ]
         for p in garbage_list:
             for f in glob.glob(p):
@@ -202,9 +278,9 @@ used to provide SSL for Twisted. Smartcards supported through the Engine
 interface.'''
 
 setuptools.setup(
-    name='ak-M2Crypto',
+    name='M2Crypto',
     version=__get_version(),
-    description='Python 3 fork of M2Crypto: A Python 3 crypto and SSL toolkit',
+    description='M2Crypto: A Python crypto and SSL toolkit',
     long_description=long_description_text,
     license='BSD-style license',
     platforms=['any'],
@@ -221,7 +297,10 @@ setuptools.setup(
         'Programming Language :: Python',
         'Topic :: Security :: Cryptography',
         'Topic :: Software Development :: Libraries :: Python Modules',
-        'Programming Language :: Python :: 3'],
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.6',
+        'Programming Language :: Python :: 2.7',
+    ],
     keywords='cryptography openssl',
     packages=setuptools.find_packages(exclude=['contrib', 'docs', 'tests']),
     ext_modules=[m2crypto],
@@ -230,6 +309,7 @@ setuptools.setup(
     cmdclass={
         'build_ext': _M2CryptoBuildExt,
         'build': _M2CryptoBuild,
+        'sdist': _M2CryptoSDist,
         'clean': Clean
     }
 )

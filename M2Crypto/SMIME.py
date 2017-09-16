@@ -92,9 +92,33 @@ def load_pkcs7(p7file):
     return PKCS7(p7_ptr, 1)
 
 
+def load_pkcs7_der(p7file):
+    # type: (AnyStr) -> PKCS7
+    bio = m2.bio_new_file(p7file, 'r')
+    if bio is None:
+        raise BIO.BIOError(Err.get_error())
+
+    try:
+        p7_ptr = m2.pkcs7_read_bio_der(bio)
+    finally:
+        m2.bio_free(bio)
+
+    if p7_ptr is None:
+        raise PKCS7_Error(Err.get_error())
+    return PKCS7(p7_ptr, 1)
+
+
 def load_pkcs7_bio(p7_bio):
     # type: (BIO.BIO) -> PKCS7
     p7_ptr = m2.pkcs7_read_bio(p7_bio._ptr())
+    if p7_ptr is None:
+        raise PKCS7_Error(Err.get_error())
+    return PKCS7(p7_ptr, 1)
+
+
+def load_pkcs7_bio_der(p7_bio):
+    # type: (BIO.BIO) -> PKCS7
+    p7_ptr = m2.pkcs7_read_bio_der(p7_bio._ptr())
     if p7_ptr is None:
         raise PKCS7_Error(Err.get_error())
     return PKCS7(p7_ptr, 1)
@@ -152,7 +176,7 @@ class SMIME_Error(Exception):  # noqa
 
 m2.smime_init(SMIME_Error)
 
-
+# FIXME class has no __init__ method
 class SMIME:
     def load_key(self, keyfile, certfile=None,
                  callback=util.passphrase_callback):
@@ -226,20 +250,26 @@ class SMIME:
             raise SMIME_Error(Err.get_error())
         return blob
 
-    def sign(self, data_bio, flags=0):
-        # type: (BIO.BIO, int) -> PKCS7
+    def sign(self, data_bio, flags=0, algo='sha1'):
+        # type: (BIO.BIO, int, Optional[str]) -> PKCS7
         if not hasattr(self, 'pkey'):
             raise SMIME_Error('no private key: use load_key()')
+
+        hash = getattr(m2, algo, None)
+
+        if hash is None:
+            raise SMIME_Error('no such hash algorithm %s' % algo)
+
         if hasattr(self, 'x509_stack'):
             pkcs7 = m2.pkcs7_sign1(self.x509._ptr(), self.pkey._ptr(),
                                    self.x509_stack._ptr(),
-                                   data_bio._ptr(), flags)
+                                   data_bio._ptr(), hash(), flags)
             if pkcs7 is None:
                 raise SMIME_Error(Err.get_error())
             return PKCS7(pkcs7, 1)
         else:
             pkcs7 = m2.pkcs7_sign0(self.x509._ptr(), self.pkey._ptr(),
-                                   data_bio._ptr(), flags)
+                                   data_bio._ptr(), hash(), flags)
             if pkcs7 is None:
                 raise SMIME_Error(Err.get_error())
             return PKCS7(pkcs7, 1)

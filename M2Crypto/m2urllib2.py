@@ -20,7 +20,7 @@ from M2Crypto import SSL, httpslib, six, util
 from M2Crypto.six.moves.urllib_parse import urldefrag, urlparse as url_parse
 from M2Crypto.six.moves.urllib_response import addinfourl
 if util.py27plus:
-    from typing import List  # noqa
+    from typing import List, Optional  # noqa
 
 # six.moves doesn't support star imports
 if six.PY3:
@@ -37,10 +37,10 @@ except AttributeError:
 
 
 class _closing_fileobject(mother_class):  # noqa
-    '''socket._fileobject that propagates self.close() to the socket.
+    """socket._fileobject that propagates self.close() to the socket.
 
     Python 2.5 provides this as socket._fileobject(sock, close=True).
-    '''
+    """
 
 # for python 3
 try:
@@ -77,7 +77,7 @@ class HTTPSHandler(AbstractHTTPHandler):
         # https://docs.python.org/3.3/library/urllib.request.html#urllib.request.Request.get_host
         try:     # up to python-3.2
             host = req.get_host()
-        except:  # from python-3.3
+        except AttributeError:  # from python-3.3
             host = req.host
         if not host:
             raise URLError('no host given')
@@ -87,13 +87,13 @@ class HTTPSHandler(AbstractHTTPHandler):
         full_url = req.get_full_url()
         target_host = url_parse(full_url)[1]
 
-        if (target_host != host):
+        if target_host != host:
             request_uri = urldefrag(full_url)[0]
             h = httpslib.ProxyHTTPSConnection(host=host, ssl_context=self.ctx)
         else:
             try:     # up to python-3.2
                 request_uri = req.get_selector()
-            except:  # from python-3.3
+            except AttributeError:  # from python-3.3
                 request_uri = req.selector
             h = httpslib.HTTPSConnection(host=host, ssl_context=self.ctx)
         # End our change
@@ -141,7 +141,7 @@ class HTTPSHandler(AbstractHTTPHandler):
 
 # Copied from urllib2 with modifications for ssl
 def build_opener(ssl_context=None, *handlers):
-    # type: (SSL.Context, *List[object]) -> OpenerDirector
+    # type: (Optional[SSL.Context], *List[object]) -> OpenerDirector
     """Create an opener object from a list of handlers.
 
     The opener will use several default handlers, including support

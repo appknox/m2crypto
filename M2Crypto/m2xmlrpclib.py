@@ -10,8 +10,9 @@ import M2Crypto
 
 from M2Crypto import SSL, httpslib, m2urllib, six, util
 if util.py27plus:
-    from typing import AnyStr, Callable  # noqa
+    from typing import Any, AnyStr, Callable, Optional  # noqa
 
+from M2Crypto.six.moves.xmlrpc_client import ProtocolError, Transport
 # six.moves doesn't support star imports
 if six.PY3:
     from xmlrpc.client import *  # noqa
@@ -21,18 +22,16 @@ else:
 __version__ = M2Crypto.__version__
 
 
-
 class SSL_Transport(Transport):  # noqa
 
     user_agent = "M2Crypto_XMLRPC/%s - %s" % (__version__,
                                               Transport.user_agent)
 
     def __init__(self, ssl_context=None, *args, **kw):
-        # type: (SSL.Context, *list, **dict) -> None
-        if getattr(Transport, '__init__', None) is not None:
-            Transport.__init__(self, *args, **kw)
+        # type: (Optional[SSL.Context], *List[Any], **Dict[Any, Any]) -> None
+        Transport.__init__(self, *args, **kw)
         if ssl_context is None:
-            self.ssl_ctx = SSL.Context('sslv23')
+            self.ssl_ctx = SSL.Context()
         else:
             self.ssl_ctx = ssl_context
 

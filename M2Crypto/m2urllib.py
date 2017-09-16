@@ -8,11 +8,14 @@ FIXME: it is questionable whether we need this old-style module at all. urllib
 
 Copyright (c) 1999-2003 Ng Pheng Siong. All rights reserved."""
 
+import base64
+import warnings
+
 from M2Crypto import SSL, httpslib, six, util
 
 from M2Crypto.six.moves.urllib_response import addinfourl
 if util.py27plus:
-    from typing import AnyStr  # noqa
+    from typing import AnyStr, Optional  # noqa
 
 # six.moves doesn't support star imports
 if six.PY3:
@@ -22,11 +25,9 @@ if six.PY3:
 else:
     from urllib import *  # noqa
 
-DEFAULT_PROTOCOL = 'sslv23'
-
 
 def open_https(self, url, data=None, ssl_context=None):
-    # type: (AnyStr, bytes, SSL.Context) -> addinfourl
+    # type: (AnyStr, Optional[bytes], Optional[SSL.Context]) -> addinfourl
     """
     Open URL over the SSL connection.
 
@@ -35,10 +36,13 @@ def open_https(self, url, data=None, ssl_context=None):
     @param ssl_context: SSL.Context to be used
     @return:
     """
+    if six.PY3:
+        warnings.warn('URLOpener has been deprecated in Py3k', DeprecationWarning)
+
     if ssl_context is not None and isinstance(ssl_context, SSL.Context):
         self.ctx = ssl_context
     else:
-        self.ctx = SSL.Context(DEFAULT_PROTOCOL)
+        self.ctx = SSL.Context()
     user_passwd = None
     if isinstance(url, six.string_types):
         try:               # python 2
@@ -53,10 +57,10 @@ def open_https(self, url, data=None, ssl_context=None):
             parsed = urlparse(url)
             host = parsed.hostname
             if parsed.port:
-                host += ":{}".format(parsed.port)
-            user_passwd = parsed.username
+                host += ":{0}".format(parsed.port)
+            user_passwd = parsed.password
             if parsed.password:
-                user_passwd += ":{}".format(parsed.password)
+                user_passwd += ":{0}".format(parsed.password)
             selector = parsed.path
     else:
         host, selector = url
@@ -76,16 +80,17 @@ def open_https(self, url, data=None, ssl_context=None):
                 parsed = urlparse(rest)
                 host = parsed.hostname
                 if parsed.port:
-                    host += ":{}".format(parsed.port)
+                    host += ":{0}".format(parsed.port)
                 user_passwd = parsed.username
                 if parsed.password:
-                    user_passwd += ":{}".format(parsed.password)
+                    user_passwd += ":{0}".format(parsed.password)
         # print("proxy via http:", host, selector)
     if not host:
         raise IOError('http error', 'no host given')
     if user_passwd:
-        import base64
-        auth = base64.encodestring(user_passwd).strip()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            auth = base64.encodestring(user_passwd).strip()
     else:
         auth = None
     # Start here!

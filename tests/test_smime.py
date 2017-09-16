@@ -12,6 +12,22 @@ except ImportError:
 
 from M2Crypto import BIO, EVP, Rand, SMIME, X509
 
+
+# Various callbacks to set by X509_Store.set_verify_cb() for
+# testing with SMIME.verify() afterwards.
+# NOTE: if the Python callback function contains compile-time or run-time
+# errors, then SMIME.verify() can fail with a mysterious error which can be
+# hard to trace back.
+# Python exceptions in callbacks do *not* propagate to verify() call.
+def verify_cb_dummy_function(ok, ctx):
+    return ok
+
+
+def verify_cb_rejects_cert_from_heikki_toivonen(ok, ctx):
+    cert = ctx.get_current_cert()
+    return "Heikki Toivonen" not in cert.get_issuer().as_text()
+
+
 class SMIMETestCase(unittest.TestCase):
     cleartext = b'some text to manipulate'
 
@@ -32,6 +48,13 @@ class SMIMETestCase(unittest.TestCase):
             SMIME.load_pkcs7('tests/signer.pem')
         with self.assertRaises(SMIME.PKCS7_Error):
             SMIME.load_pkcs7_bio(BIO.MemoryBuffer(b'no pkcs7'))
+
+        with self.assertRaises(BIO.BIOError):
+            SMIME.load_pkcs7_der('nosuchfile-dfg456')
+        with self.assertRaises(SMIME.PKCS7_Error):
+            SMIME.load_pkcs7_der('tests/signer.pem')
+        with self.assertRaises(SMIME.PKCS7_Error):
+            SMIME.load_pkcs7_bio_der(BIO.MemoryBuffer(b'no pkcs7'))
 
         with self.assertRaises(SMIME.SMIME_Error):
             SMIME.smime_load_pkcs7('tests/signer.pem')
@@ -67,6 +90,31 @@ class SMIMETestCase(unittest.TestCase):
         s.write(out, p7, BIO.MemoryBuffer(self.cleartext))
         return out
 
+    def test_sign_unknown_digest(self):
+        buf = BIO.MemoryBuffer(self.cleartext)
+        s = SMIME.SMIME()
+        s.load_key('tests/signer_key.pem', 'tests/signer.pem')
+        self.assertRaises(SMIME.SMIME_Error, s.sign,
+                          buf, SMIME.PKCS7_DETACHED, 'invalid digest name')
+
+    def test_sign_nondefault_digest(self):
+        buf = BIO.MemoryBuffer(self.cleartext)
+        s = SMIME.SMIME()
+        s.load_key('tests/signer_key.pem', 'tests/signer.pem')
+        p7 = s.sign(buf, flags=SMIME.PKCS7_DETACHED, algo='sha512')
+        self.assertEqual(p7.type(), SMIME.PKCS7_SIGNED)
+
+    def test_sign_with_stack(self):
+        buf = BIO.MemoryBuffer(self.cleartext)
+        s = SMIME.SMIME()
+        s.load_key('tests/signer_key.pem', 'tests/signer.pem')
+        cert = X509.load_cert('tests/server.pem')
+        stack = X509.X509_Stack()
+        stack.push(cert)
+        s.set_x509_stack(stack)
+        p7 = s.sign(buf, flags=SMIME.PKCS7_DETACHED, algo='sha512')
+        self.assertEqual(p7.type(), SMIME.PKCS7_SIGNED)
+
     def test_store_load_info(self):
         st = X509.X509_Store()
         with self.assertRaises(X509.X509Error):
@@ -86,14 +134,65 @@ class SMIMETestCase(unittest.TestCase):
         s.set_x509_store(st)
 
         p7, data = SMIME.smime_load_pkcs7_bio(self.signed)
-
         self.assertIsInstance(p7, SMIME.PKCS7, p7)
+
         v = s.verify(p7, data)
         self.assertEqual(v, self.cleartext)
 
         t = p7.get0_signers(sk)
         self.assertEqual(len(t), 1)
         self.assertEqual(t[0].as_pem(), x509.as_pem(), t[0].as_text())
+
+    def test_verify_with_static_callback(self):
+        s = SMIME.SMIME()
+
+        x509 = X509.load_cert('tests/signer.pem')
+        sk = X509.X509_Stack()
+        sk.push(x509)
+        s.set_x509_stack(sk)
+
+        st = X509.X509_Store()
+        st.load_info('tests/ca.pem')
+        st.set_verify_cb(verify_cb_rejects_cert_from_heikki_toivonen)
+        s.set_x509_store(st)
+
+        p7, data = SMIME.smime_load_pkcs7_bio(self.signed)
+        self.assertIsInstance(p7, SMIME.PKCS7, p7)
+
+        # Should reject certificate issued by Heikki Toivonen:
+        with self.assertRaises(SMIME.PKCS7_Error):
+            s.verify(p7, data)
+
+        st.set_verify_cb(verify_cb_dummy_function)
+        v = s.verify(p7, data)
+        self.assertEqual(v, self.cleartext)
+
+        st.set_verify_cb()
+        v = s.verify(p7, data)
+        self.assertEqual(v, self.cleartext)
+
+
+    def verify_cb_dummy_method(self, ok, store):
+        return verify_cb_dummy_function(ok, store)
+
+    def test_verify_with_method_callback(self):
+        s = SMIME.SMIME()
+
+        x509 = X509.load_cert('tests/signer.pem')
+        sk = X509.X509_Stack()
+        sk.push(x509)
+        s.set_x509_stack(sk)
+
+        st = X509.X509_Store()
+        st.load_info('tests/ca.pem')
+        st.set_verify_cb(self.verify_cb_dummy_method)
+        s.set_x509_store(st)
+
+        p7, data = SMIME.smime_load_pkcs7_bio(self.signed)
+
+        self.assertIsInstance(p7, SMIME.PKCS7, p7)
+        v = s.verify(p7, data)
+        self.assertEqual(v, self.cleartext)
 
     def test_verifyBad(self):
         s = SMIME.SMIME()
@@ -227,31 +326,34 @@ class WriteLoadTestCase(unittest.TestCase):
         s.load_key('tests/signer_key.pem', 'tests/signer.pem')
         p7 = s.sign(BIO.MemoryBuffer(b'some text'))
         self.filename = 'tests/sig.p7'
-        f = BIO.openfile(self.filename, 'wb')
-        self.assertEqual(p7.write(f), 1)
-        f.close()
+        with BIO.openfile(self.filename, 'wb') as f:
+            self.assertEqual(p7.write(f), 1)
+        self.filename_der = 'tests/sig.p7.der'
+        with BIO.openfile(self.filename_der, 'wb') as f:
+            self.assertEqual(p7.write_der(f), 1)
 
         p7 = s.sign(BIO.MemoryBuffer(b'some text'), SMIME.PKCS7_DETACHED)
         self.filenameSmime = 'tests/sig.p7s'
-        f = BIO.openfile(self.filenameSmime, 'wb')
-        self.assertEqual(s.write(f, p7, BIO.MemoryBuffer(b'some text')), 1)
-        f.close()
-
-    def test_write_pkcs7_der(self):
-        buf = BIO.MemoryBuffer()
-        self.assertEqual(SMIME.load_pkcs7(self.filename).write_der(buf), 1)
-        s = buf.read()
-        assert len(s) in (1188, 1204, 1433, 1243, 1263, 1148, 1168), len(s)
+        with BIO.openfile(self.filenameSmime, 'wb') as f:
+            self.assertEqual(s.write(f, p7, BIO.MemoryBuffer(b'some text')), 1)
 
     def test_load_pkcs7(self):
         self.assertEqual(SMIME.load_pkcs7(self.filename).type(), SMIME.PKCS7_SIGNED)
 
     def test_load_pkcs7_bio(self):
-        f = open(self.filename, 'rb')
-        buf = BIO.MemoryBuffer(f.read())
-        f.close()
+        with open(self.filename, 'rb') as f:
+            buf = BIO.MemoryBuffer(f.read())
 
         self.assertEqual(SMIME.load_pkcs7_bio(buf).type(), SMIME.PKCS7_SIGNED)
+
+    def test_load_pkcs7_der(self):
+        self.assertEqual(SMIME.load_pkcs7_der(self.filename_der).type(), SMIME.PKCS7_SIGNED)
+
+    def test_load_pkcs7_bio_der(self):
+        with open(self.filename_der, 'rb') as f:
+            buf = BIO.MemoryBuffer(f.read())
+
+        self.assertEqual(SMIME.load_pkcs7_bio_der(buf).type(), SMIME.PKCS7_SIGNED)
 
     def test_load_smime(self):
         a, b = SMIME.smime_load_pkcs7(self.filenameSmime)
@@ -260,9 +362,8 @@ class WriteLoadTestCase(unittest.TestCase):
         self.assertEqual(a.type(), SMIME.PKCS7_SIGNED)
 
     def test_load_smime_bio(self):
-        f = open(self.filenameSmime, 'rb')
-        buf = BIO.MemoryBuffer(f.read())
-        f.close()
+        with open(self.filenameSmime, 'rb') as f:
+            buf = BIO.MemoryBuffer(f.read())
 
         a, b = SMIME.smime_load_pkcs7_bio(buf)
         self.assertIsInstance(a, SMIME.PKCS7, a)

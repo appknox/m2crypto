@@ -4,13 +4,37 @@
 
 Copyright (c) 2000 Ng Pheng Siong. All rights reserved."""
 
+import multiprocessing
 try:
     import unittest2 as unittest
 except ImportError:
     import unittest
 
-import M2Crypto
 from M2Crypto.BIO import MemoryBuffer
+
+
+class TimeLimitExpired(Exception):
+    pass
+
+
+def time_limit(timeout, func, exc_msg, *args, **kwargs):
+    class FuncProc(multiprocessing.Process):
+        def __init__(self):
+            multiprocessing.Process.__init__(self)
+            self.result = None
+
+        def run(self):
+            self.result = func(*args, **kwargs)
+
+    it = FuncProc()
+    it.start()
+    it.join(timeout)
+    if it.is_alive():
+        it.terminate()
+        raise TimeLimitExpired(exc_msg)
+    else:
+        return it.result
+
 
 class MemoryBufferTestCase(unittest.TestCase):
 
@@ -37,6 +61,12 @@ class MemoryBufferTestCase(unittest.TestCase):
         self.assertEqual(len(mb), len(self.data))
         out = mb.read()
         self.assertEqual(out, self.data)
+
+    def test_init_something_result_bytes(self):
+        mb = MemoryBuffer(self.data)
+        self.assertEqual(len(mb), len(self.data))
+        out = mb.read()
+        self.assertIsInstance(out, bytes)
 
     def test_init_something_cm(self):
         with MemoryBuffer(self.data) as mb:
@@ -73,6 +103,24 @@ class MemoryBufferTestCase(unittest.TestCase):
         with self.assertRaises(IOError):
             mb.write(self.data)
         assert mb.readable() and not mb.writeable()
+
+    def test_readline(self):
+        # test against possible endless loop
+        # http://stackoverflow.com/questions/9280550/
+        timeout_secs = 10
+
+        def run_test(*args, **kwargs):
+            with MemoryBuffer(b'hello\nworld\n') as mb:
+                self.assertTrue(mb.readable())
+                self.assertEqual(mb.readline().rstrip(), b'hello')
+                self.assertEqual(mb.readline().rstrip(), b'world')
+
+            with MemoryBuffer(b'hello\nworld\n') as mb:
+                self.assertEqual(mb.readlines(),
+                                 [b'hello\n', b'world\n'])
+
+        time_limit(timeout_secs, run_test,
+                   'The readline() should not timeout!')
 
 
 def suite():

@@ -15,7 +15,8 @@ except ImportError:
 from M2Crypto.BIO import File, openfile
 
 log = logging.getLogger(__name__)
-
+logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
+                    level=logging.DEBUG)
 
 class FileTestCase(unittest.TestCase):
 
@@ -58,8 +59,11 @@ class FileTestCase(unittest.TestCase):
 
     def test_openfile_wb(self):
         # First create the file using M2Crypto.BIO.openfile().
+        log.info('self.fname = %s', self.fname)
         with openfile(self.fname, 'wb') as f:
-            f.write(self.data)
+            ret = f.write(self.data)
+            log.info('ret = %s', ret)
+            log.info('f = %s', f)
 
         # Now open the file using Python's open().
         with open(self.fname, 'rb') as f:

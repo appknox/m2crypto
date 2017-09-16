@@ -52,10 +52,6 @@ extern const char *SSL_alert_desc_string(int);
 %rename(ssl_get_alert_desc_v) SSL_alert_desc_string_long;
 extern const char *SSL_alert_desc_string_long(int);
 
-#ifndef OPENSSL_NO_SSL2
-%rename(sslv2_method) SSLv2_method;
-extern SSL_METHOD *SSLv2_method(void);
-#endif
 #ifndef OPENSSL_NO_SSL3
 %rename(sslv3_method) SSLv3_method;
 extern SSL_METHOD *SSLv3_method(void);
@@ -99,6 +95,8 @@ extern long SSL_CTX_set_timeout(SSL_CTX *, long);
 extern long SSL_CTX_get_timeout(CONST SSL_CTX *);
 %rename(ssl_ctx_get_cert_store) SSL_CTX_get_cert_store;
 extern X509_STORE *SSL_CTX_get_cert_store(CONST SSL_CTX *);
+%rename(ssl_ctx_set_default_verify_paths) SSL_CTX_set_default_verify_paths;
+extern int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx);
 
 %rename(bio_new_ssl) BIO_new_ssl;
 extern BIO *BIO_new_ssl(SSL_CTX *, int);
@@ -549,16 +547,23 @@ PyObject *ssl_accept(SSL *ssl, double timeout) {
     ssl_err = SSL_get_error(ssl, r);
     Py_END_ALLOW_THREADS
 
-
     switch (ssl_err) {
         case SSL_ERROR_NONE:
         case SSL_ERROR_ZERO_RETURN:
+#if PY_MAJOR_VERSION >= 3
+            obj = PyLong_FromLong((long)1);
+#else
             obj = PyInt_FromLong((long)1);
+#endif //PY_MAJOR_VERSION >= 3
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
             if (timeout <= 0) {
+#if PY_MAJOR_VERSION >= 3
+                obj = PyLong_FromLong((long)0);
+#else
                 obj = PyInt_FromLong((long)0);
+#endif //PY_MAJOR_VERSION >= 3
                 break;
             }
             if (ssl_sleep_with_timeout(ssl, &tv, timeout, ssl_err) == 0)
@@ -589,16 +594,23 @@ PyObject *ssl_connect(SSL *ssl, double timeout) {
     ssl_err = SSL_get_error(ssl, r);
     Py_END_ALLOW_THREADS
 
-    
     switch (ssl_err) {
         case SSL_ERROR_NONE:
         case SSL_ERROR_ZERO_RETURN:
+#if PY_MAJOR_VERSION >= 3
+            obj = PyLong_FromLong((long)1);
+#else
             obj = PyInt_FromLong((long)1);
+#endif //PY_MAJOR_VERSION >= 3
             break;
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
             if (timeout <= 0) {
+#if PY_MAJOR_VERSION >= 3
+                obj = PyLong_FromLong((long)0);
+#else
                 obj = PyInt_FromLong((long)0);
+#endif //PY_MAJOR_VERSION >= 3
                 break;
             }
             if (ssl_sleep_with_timeout(ssl, &tv, timeout, ssl_err) == 0)
@@ -611,7 +623,6 @@ PyObject *ssl_connect(SSL *ssl, double timeout) {
             obj = NULL;
             break;
     }
-    
     
     return obj;
 }

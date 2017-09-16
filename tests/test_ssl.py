@@ -33,14 +33,11 @@ try:
 except ImportError:
     import unittest
 
-from M2Crypto import (Err, Rand, SSL, X509, ftpslib, httpslib, m2,
-                      m2urllib, m2urllib2, m2xmlrpclib, six, util)
-from M2Crypto.six import assertRaisesRegex
-from tests import plat_debian, plat_fedora
+from M2Crypto import (Err, Rand, SSL, X509, ftpslib, httpslib, m2, m2urllib,
+                      m2urllib2, m2xmlrpclib, six, util)
+from tests import plat_fedora
 from tests.fips import fips_mode
 
-logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
-                    level=logging.DEBUG)
 log = logging.getLogger('test_SSL')
 
 # FIXME
@@ -61,25 +58,34 @@ def allocate_srv_port():
 
 
 def verify_cb_new_function(ok, store):
-    try:
-        assert not ok
-        err = store.get_error()
-        assert err in [m2.X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT,
-                       m2.X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY,
-                       m2.X509_V_ERR_CERT_UNTRUSTED,
-                       m2.X509_V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE]
-        assert store.get_error_depth() == 0
-        app_data = m2.x509_store_ctx_get_app_data(store.ctx)
-        assert app_data
-        x509 = store.get_current_cert()
-        assert x509
-        stack = store.get1_chain()
-        assert len(stack) == 1
-        assert stack[0].as_pem() == x509.as_pem()
-    except AssertionError:
-        # If we let exceptions propagate from here the
-        # caller may see strange errors. This is cleaner.
-        return 0
+    log.debug('ok = %s (%s)', ok, type(ok))
+    log.debug('store = %s (%s)', store, type(store))
+#     try:
+    assert not ok
+    log.debug('ctx = %s (%s)', store.ctx, type(store.ctx))
+    err = store.get_error()
+    log.debug('err = %s (%s)', err, type(err))
+    assert err in [m2.X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT,
+                   m2.X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY,
+                   m2.X509_V_ERR_CERT_UNTRUSTED,
+                   m2.X509_V_ERR_UNABLE_TO_VERIFY_LEAF_SIGNATURE]
+    log.debug('store.get_error_depth() = %d', store.get_error_depth())
+    assert store.get_error_depth() == 0
+    app_data = m2.x509_store_ctx_get_app_data(store.ctx)
+    log.debug('app_data = %s', app_data)
+    assert app_data
+    x509 = store.get_current_cert()
+    log.debug('x509 = %s', x509)
+    assert x509
+    stack = store.get1_chain()
+    log.debug('stack = %s / %d', stack, len(stack))
+    assert len(stack) == 1
+    log.debug('stack = %s\nx509 = %s', stack[0].as_pem(), x509.as_pem())
+    assert stack[0].as_pem() == x509.as_pem()
+#     except AssertionError:
+#         # If we let exceptions propagate from here the
+#         # caller may see strange errors. This is cleaner.
+#         return 0
     return 1
 
 
@@ -87,7 +93,7 @@ class VerifyCB:
     def __call__(self, ok, store):
         return verify_cb_new_function(ok, store)
 
-sleepTime = float(os.getenv('M2CRYPTO_TEST_SSL_SLEEP', 1.5))
+sleepTime = float(os.getenv('M2CRYPTO_TEST_SSL_SLEEP', '1.5'))
 
 
 def find_openssl():
@@ -252,8 +258,8 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
         try:
             ctx = SSL.Context('tlsv1')
             s = SSL.Connection(ctx)
-            with assertRaisesRegex(self, SSL.SSLError,
-                                   r'wrong version number|unexpected eof'):
+            with six.assertRaisesRegex(self, SSL.SSLError,
+                                       r'wrong version number|unexpected eof'):
                 s.connect(self.srv_addr)
             s.close()
         finally:
@@ -274,7 +280,8 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
 
     # TLS is required in FIPS mode
     @unittest.skipIf(fips_mode, "Can't be run in FIPS mode")
-    @unittest.skipIf(plat_debian, "Debian distros don't allow weak ciphers")
+    @unittest.skipUnless(hasattr(m2, "sslv2_method"),
+                         "This platform doesn't support SSLv2")
     def test_sslv23_weak_crypto(self):
         self.args = self.args + ['-ssl2']
         pid = self.start_server(self.args)
@@ -302,8 +309,8 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             ctx = SSL.Context()
             s = SSL.Connection(ctx)
             s.set_cipher_list('AES128-SHA')
-            with assertRaisesRegex(self, SSL.SSLError,
-                                   'sslv3 alert handshake failure'):
+            with six.assertRaisesRegex(self, SSL.SSLError,
+                                       'sslv3 alert handshake failure'):
                 s.connect(self.srv_addr)
             s.close()
         finally:
@@ -316,7 +323,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             ctx = SSL.Context()
             s = SSL.Connection(ctx)
             s.set_cipher_list('EXP-RC2-MD5')
-            with assertRaisesRegex(self, SSL.SSLError, 'no ciphers available'):
+            with six.assertRaisesRegex(self, SSL.SSLError, 'no ciphers available'):
                 s.connect(self.srv_addr)
             s.close()
         finally:
@@ -381,7 +388,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             s.close()
         finally:
             self.stop_server(pid)
-        self.assertIn(b's_server -quiet -www', data)
+        self.assertIn('s_server -quiet -www', data)
 
     def test_verify_cb_new_class(self):
         pid = self.start_server(self.args)
@@ -399,7 +406,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             s.close()
         finally:
             self.stop_server(pid)
-        self.assertIn(b's_server -quiet -www', data)
+        self.assertIn('s_server -quiet -www', data)
 
     def test_verify_cb_new_function(self):
         pid = self.start_server(self.args)
@@ -416,7 +423,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             s.close()
         finally:
             self.stop_server(pid)
-        self.assertIn(b's_server -quiet -www', data)
+        self.assertIn('s_server -quiet -www', data)
 
     def test_verify_cb_lambda(self):
         pid = self.start_server(self.args)
@@ -523,7 +530,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             s.close()
         finally:
             self.stop_server(pid)
-        self.assertIn(b's_server -quiet -www', data)
+        self.assertIn('s_server -quiet -www', data)
 
     def test_verify_allow_unknown_new(self):
         pid = self.start_server(self.args)
@@ -540,7 +547,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
             s.close()
         finally:
             self.stop_server(pid)
-        self.assertIn(b's_server -quiet -www', data)
+        self.assertIn('s_server -quiet -www', data)
 
     def test_verify_cert(self):
         pid = self.start_server(self.args)
@@ -731,6 +738,7 @@ class MiscSSLClientTestCase(BaseSSLClientTestCase):
 
 class UrllibSSLClientTestCase(BaseSSLClientTestCase):
 
+    @unittest.skipIf(six.PY3, "urllib.URLOpener is deprecated in py3k")
     def test_urllib(self):
         pid = self.start_server(self.args)
         try:
@@ -831,7 +839,8 @@ class Urllib2SSLClientTestCase(BaseSSLClientTestCase):
             self.stop_server(pid)
 
 
-@unittest.skipIf(six.PY3, 'FIXME Twisted support is not done yet')
+@unittest.skipUnless(util.py27plus,
+                     "Twisted doesn't test well with Python 2.6")
 class TwistedSSLClientTestCase(BaseSSLClientTestCase):
 
     def test_timeout(self):
@@ -877,12 +886,9 @@ class TwistedSSLClientTestCase(BaseSSLClientTestCase):
         try:
             if pipe_pid == 0:
                 try:
-                    f = open('tests/' + FIFO_NAME, 'w')
-                    try:
+                    with open('tests/' + FIFO_NAME, 'w') as f:
                         time.sleep(sleepTime + 1)
                         f.write('Content\n')
-                    finally:
-                        f.close()
                 finally:
                     os._exit(0)
             self.args[self.args.index('-www')] = '-WWW'
@@ -916,9 +922,10 @@ class TwistedSSLClientTestCase(BaseSSLClientTestCase):
                 'Skipping twisted wrapper test because twisted not found')
             return
 
+        # TODO Class must implement all abstract methods
         class EchoClient(LineReceiver):
             def connectionMade(self):
-                self.sendLine('GET / HTTP/1.0\n\n')
+                self.sendLine(b'GET / HTTP/1.0\n\n')
 
             def lineReceived(self, line):
                 global twisted_data
@@ -942,7 +949,7 @@ class TwistedSSLClientTestCase(BaseSSLClientTestCase):
 
         try:
             global twisted_data
-            twisted_data = ''
+            twisted_data = b''
 
             context_factory = ContextFactory()
             factory = EchoClientFactory()
@@ -995,8 +1002,9 @@ def suite():
     suite.addTest(unittest.makeSuite(MiscSSLClientTestCase))
     suite.addTest(unittest.makeSuite(FtpslibTestCase))
     try:
-        import M2Crypto.SSL.TwistedProtocolWrapper as wrapper  # noqa
-        suite.addTest(unittest.makeSuite(TwistedSSLClientTestCase))
+        if util.py27plus:
+            import M2Crypto.SSL.TwistedProtocolWrapper as wrapper  # noqa
+            suite.addTest(unittest.makeSuite(TwistedSSLClientTestCase))
     except ImportError:
         pass
     return suite
@@ -1007,16 +1015,15 @@ def zap_servers():
     fn = tempfile.mktemp()
     cmd = 'ps | egrep %s > %s' % (s, fn)
     os.system(cmd)
-    f = open(fn)
-    while 1:
-        ps = f.readline()
-        if not ps:
-            break
-        chunk = ps.split()
-        pid, cmd = chunk[0], chunk[4]
-        if cmd == s:
-            os.kill(int(pid), signal.SIGTERM)
-    f.close()
+    with open(fn) as f:
+        while 1:
+            ps = f.readline()
+            if not ps:
+                break
+            chunk = ps.split()
+            pid, cmd = chunk[0], chunk[4]
+            if cmd == s:
+                os.kill(int(pid), signal.SIGTERM)
     os.unlink(fn)
 
 

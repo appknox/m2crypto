@@ -62,7 +62,7 @@ extern X509_NAME *X509_get_subject_name(X509 *);
 %rename(x509_set_subject_name) X509_set_subject_name;
 extern int X509_set_subject_name(X509 *, X509_NAME *);
 %rename(x509_cmp_current_time) X509_cmp_current_time;
-extern int X509_cmp_current_time(ASN1_UTCTIME *);
+extern int X509_cmp_current_time(ASN1_TIME *);
 
                             
 /* From x509.h */
@@ -239,6 +239,9 @@ extern X509_STORE *X509_STORE_new(void);
 extern void X509_STORE_free(X509_STORE *);
 %rename(x509_store_add_cert) X509_STORE_add_cert;
 extern int X509_STORE_add_cert(X509_STORE *, X509 *);
+%rename(x509_store_set_verify_cb) X509_STORE_set_verify_cb;
+extern void X509_STORE_set_verify_cb(X509_STORE *st,
+                                     int (*verify_cb)(int ok, X509_STORE_CTX *ctx));
 
 %rename(x509_store_ctx_get_current_cert) X509_STORE_CTX_get_current_cert;
 extern X509 *X509_STORE_CTX_get_current_cert(X509_STORE_CTX *);
@@ -411,22 +414,22 @@ long x509_get_version(X509 *x) {
 }
 
 /* X509_set_notBefore() is a macro. */
-int x509_set_not_before(X509 *x, ASN1_UTCTIME *tm) {
+int x509_set_not_before(X509 *x, ASN1_TIME *tm) {
     return X509_set_notBefore(x, tm);
 }
 
 /* X509_get_notBefore() is a macro. */
-ASN1_UTCTIME *x509_get_not_before(X509 *x) {
+ASN1_TIME *x509_get_not_before(X509 *x) {
     return X509_get_notBefore(x);
 }
 
 /* X509_set_notAfter() is a macro. */
-int x509_set_not_after(X509 *x, ASN1_UTCTIME *tm) {
+int x509_set_not_after(X509 *x, ASN1_TIME *tm) {
     return X509_set_notAfter(x, tm);
 }
 
 /* X509_get_notAfter() is a macro. */
-ASN1_UTCTIME *x509_get_not_after(X509 *x) {
+ASN1_TIME *x509_get_not_after(X509 *x) {
     return X509_get_notAfter(x);
 }
 
@@ -434,8 +437,8 @@ int x509_sign(X509 *x, EVP_PKEY *pkey, EVP_MD *md) {
     return X509_sign(x, pkey, md);
 }
 
-/* XXX The first parameter is really ASN1_TIME, does it matter? */
-ASN1_TIME *x509_gmtime_adj(ASN1_UTCTIME *s, long adj) {
+/* x509_gmtime_adj() is a macro. */
+ASN1_TIME *x509_gmtime_adj(ASN1_TIME *s, long adj) {
     return X509_gmtime_adj(s, adj);
 }
 
@@ -445,8 +448,7 @@ PyObject *x509_name_by_nid(X509_NAME *name, int nid) {
     PyObject *ret;
 
     if ((len = X509_NAME_get_text_by_NID(name, nid, NULL, 0)) == -1) {
-        Py_INCREF(Py_None);
-        return Py_None;
+        Py_RETURN_NONE;
     }
     len++;
     if (!(buf = PyMem_Malloc(len))) {
@@ -616,6 +618,13 @@ X509_EXTENSION *sk_x509_extension_value(STACK_OF(X509_EXTENSION) *stack, int i) 
 /* X509_STORE_CTX_get_app_data is a macro. */
 void *x509_store_ctx_get_app_data(X509_STORE_CTX *ctx) {
   return X509_STORE_CTX_get_app_data(ctx);
+}
+
+void x509_store_set_verify_cb(X509_STORE *store, PyObject *pyfunc) {
+    Py_XDECREF(x509_store_verify_cb_func);
+    Py_INCREF(pyfunc);
+    x509_store_verify_cb_func = pyfunc;
+    X509_STORE_set_verify_cb(store, x509_store_verify_callback);
 }
 
 /*#defines for i2d and d2i types, which are typed differently

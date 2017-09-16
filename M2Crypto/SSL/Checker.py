@@ -84,7 +84,7 @@ class Checker:
 
         if self.fingerprint:
             if self.digest not in ('sha1', 'md5'):
-                raise ValueError('unsupported digest "%s"' % (self.digest))
+                raise ValueError('unsupported digest "%s"' % self.digest)
 
             if self.digest == 'sha1':
                 expected_len = 40
@@ -95,21 +95,20 @@ class Checker:
 
             if len(self.fingerprint) != expected_len:
                 raise WrongCertificate(
-                    '''peer certificate fingerprint length does not match
-                    fingerprint: {0}
-                    expected = {1}
-                    observed = {2}'''.format(self.fingerprint,
-                                             expected_len,
-                                             len(self.fingerprint)))
+                    ('peer certificate fingerprint length does not match\n' +
+                     'fingerprint: {0}\nexpected = {1}\n' +
+                     'observed = {2}').format(self.fingerprint,
+                                              expected_len,
+                                              len(self.fingerprint)))
 
             expected_fingerprint = util.py3str(self.fingerprint)
             observed_fingerprint = peerCert.get_fingerprint(md=self.digest)
             if observed_fingerprint != expected_fingerprint:
-                raise WrongCertificate('''
-                peer certificate fingerprint does not match
-                expected = {0},
-                observed = {1}'''.format(expected_fingerprint,
-                                         observed_fingerprint))
+                raise WrongCertificate(
+                    ('peer certificate fingerprint does not match\n' +
+                     'expected = {0},\n' +
+                     'observed = {1}').format(expected_fingerprint,
+                                              observed_fingerprint))
 
         if self.host:
             hostValidationPassed = False
@@ -257,7 +256,7 @@ class Checker:
         # Massage certHost so that it can be used in regex
         certHost = certHost.replace('.', '\.')
         certHost = certHost.replace('*', '[^\.]*')
-        if re.compile('^%s$' % (certHost)).match(host):
+        if re.compile('^%s$' % certHost).match(host):
             return True
 
         return False

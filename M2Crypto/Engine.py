@@ -6,12 +6,16 @@ Pavel Shramov
 IMEC MSU
 """
 
-from M2Crypto import EVP, Err, X509, m2
+from M2Crypto import EVP, Err, X509, m2, six, util
+if util.py27plus:
+    from typing import AnyStr, Callable, Optional  # noqa
+
 
 class EngineError(Exception):
     pass
 
 m2.engine_init_error(EngineError)
+
 
 class Engine:
     """Wrapper for ENGINE object."""
@@ -19,7 +23,7 @@ class Engine:
     m2_engine_free = m2.engine_free
 
     def __init__(self, id=None, _ptr=None, _pyfree=1):
-        # type: (bytes, bytes, int) -> None
+        # type: (Optional[bytes], Optional[bytes], int) -> None
         """Create new Engine from ENGINE pointer or obtain by id"""
         if not _ptr and not id:
             raise ValueError("No engine id specified")
@@ -48,7 +52,7 @@ class Engine:
         return m2.engine_finish(self._ptr)
 
     def ctrl_cmd_string(self, cmd, arg, optional=0):
-        # type: (bytes, bytes, int) -> int
+        # type: (bytes, Optional[bytes], int) -> int
         """Call ENGINE_ctrl_cmd_string"""
         if not m2.engine_ctrl_cmd_string(self._ptr, cmd, arg, optional):
             raise EngineError(Err.get_error())
@@ -73,7 +77,7 @@ class Engine:
         return m2.engine_set_default(self._ptr, methods)
 
     def _engine_load_key(self, func, name, pin=None):
-        # type: (Callable, bytes, bytes) -> EVP.PKey
+        # type: (Callable, bytes, Optional[bytes]) -> EVP.PKey
         """Helper function for loading keys"""
         ui = m2.ui_openssl()
         cbd = m2.engine_pkcs11_data_new(pin)
@@ -87,14 +91,14 @@ class Engine:
         return key
 
     def load_private_key(self, name, pin=None):
-        # type: (bytes, bytes) -> X509.X509
+        # type: (bytes, Optional[bytes]) -> X509.X509
         """Load private key with engine methods (e.g from smartcard).
             If pin is not set it will be asked
         """
         return self._engine_load_key(m2.engine_load_private_key, name, pin)
 
     def load_public_key(self, name, pin=None):
-        # type: (bytes, bytes) -> EVP.PKey
+        # type: (bytes, Optional[bytes]) -> EVP.PKey
         """Load public key with engine methods (e.g from smartcard)."""
         return self._engine_load_key(m2.engine_load_public_key, name, pin)
 
@@ -109,14 +113,16 @@ class Engine:
 
 
 def load_dynamic_engine(id, sopath):
-    # type: (bytes, bytes) -> Engine
+    # type: (bytes, AnyStr) -> Engine
     """Load and return dymanic engine from sopath and assign id to it"""
+    if isinstance(sopath, six.text_type):
+        sopath = sopath.encode('utf8')
     m2.engine_load_dynamic()
     e = Engine('dynamic')
-    e.ctrl_cmd_string("SO_PATH", sopath)
-    e.ctrl_cmd_string("ID", id)
-    e.ctrl_cmd_string("LIST_ADD", "1")
-    e.ctrl_cmd_string("LOAD", None)
+    e.ctrl_cmd_string(b'SO_PATH', sopath)
+    e.ctrl_cmd_string(b'ID', id)
+    e.ctrl_cmd_string(b'LIST_ADD', '1')
+    e.ctrl_cmd_string(b'LOAD', None)
     return e
 
 

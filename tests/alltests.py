@@ -1,14 +1,8 @@
-#!/usr/bin/env python3
 from __future__ import absolute_import, print_function
-
-import logging
-
-logging.basicConfig(format='%(levelname)s:%(funcName)s:%(message)s',
-                    level=logging.DEBUG)
 
 
 def suite():
-    from M2Crypto import m2, util  # noqa
+    from M2Crypto import m2  # noqa
     import os
     import unittest
 
@@ -16,10 +10,6 @@ def suite():
         # See http://docs.python.org/lib/built-in-funcs.html#l2h-6
         components = name.split('.')
         try:
-            # FIXME for Py3k compatibility:
-            # if sys.version_info.major > 2:
-            #     pass # something for Py3k
-            #
             # python setup.py test
             mod = __import__(name)
             for comp in components[1:]:
@@ -110,7 +100,3 @@ def runall(report_leaks=0):
 
     if report_leaks:
         dump_garbage()
-
-
-if __name__ == '__main__':
-    runall(0)

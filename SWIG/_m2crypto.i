@@ -8,7 +8,7 @@
  *
  */
 
-%module(threads=1) _m2crypto
+%module(threads=1) m2crypto
 /* We really don't need threadblock (PyGILState_Ensure() etc.) anywhere.
    Disable threadallow as well, only enable it for operations likely to
    block. */
@@ -26,6 +26,7 @@ static PyObject *ssl_verify_cb_func;
 static PyObject *ssl_info_cb_func;
 static PyObject *ssl_set_tmp_dh_cb_func;
 static PyObject *ssl_set_tmp_rsa_cb_func;
+static PyObject *x509_store_verify_cb_func;
 %}
 
 %include <openssl/opensslv.h>
