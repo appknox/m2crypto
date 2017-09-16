@@ -278,7 +278,7 @@ used to provide SSL for Twisted. Smartcards supported through the Engine
 interface.'''
 
 setuptools.setup(
-    name='M2Crypto',
+    name='ak-M2Crypto',
     version=__get_version(),
     description='M2Crypto: A Python crypto and SSL toolkit',
     long_description=long_description_text,
