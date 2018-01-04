@@ -28,7 +28,7 @@ import setuptools
 from setuptools.command import build_ext
 
 REQUIRED_SWIG_VERSION = '2.0.4'
-MAXIMUM_OPENSSL_VERSION = '1.0.1'
+MAXIMUM_OPENSSL_VERSION = '1.0.2'
 
 
 if sys.version_info[:2] <= (2, 6):
