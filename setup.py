@@ -64,7 +64,7 @@ def openssl_version(req_ver):
     if hasattr(out, 'decode'):
         out = out.decode('utf8')
 
-    ver_str = out.split()[1].strip(string.letters + string.punctuation +
+    ver_str = out.split()[1].strip(string.ascii_letters + string.punctuation +
                                    string.whitespace)
 
     if not ver_str:
